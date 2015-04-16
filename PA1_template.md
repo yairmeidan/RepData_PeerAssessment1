@@ -1,0 +1,494 @@
+---
+title: "PA1_template"
+author: "Yair Meidan"
+date: "Wednesday, April 15, 2015"
+output: html_document
+---
+
+## Initializing the environment
+
+1. Set global options
+- Make sure that the code for generating the output is always present
+- Make sure that results are always shown
+- Make sure that warnings and messages (e.g. while loading packages) are not displayed
+
+```r
+knitr::opts_chunk$set(
+        echo=TRUE
+        ,results="show"
+        ,warning=FALSE
+        ,message=FALSE
+        ,hard_wrap=FALSE
+)
+```
+
+2. Remove all objects from memory  (clear it)
+
+```r
+rm(list=ls())
+```
+
+3. Install required packages (only if needed) and load them
+
+```r
+ipc<-as.data.frame(installed.packages())
+if(!("dplyr" %in% ipc$Package)){install.packages("dplyr")}
+if(!("chron" %in% ipc$Package)){install.packages("chron")}
+if(!("ggplot2" %in% ipc$Package)){install.packages("ggplot2")}
+if(!("xtable" %in% ipc$Package)){install.packages("xtable")}
+if(!("lubridate" %in% ipc$Package)){install.packages("lubridate")}
+library(dplyr)
+library(chron) 
+library(ggplot2)
+library(xtable)
+library(lubridate)
+```
+
+## Loading and preprocessing the data
+
+1. Load the data
+- download zip file only if needed
+- unzip and read entire csv file
+- assume that the user has already defined a working directory with setwd()
+
+```r
+# download zip file if needed 
+if (!file.exists("repdata-Fdata-Factivity.zip")) {
+        fileUrl<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+        download.file(fileUrl,destfile="repdata-Fdata-Factivity.zip")
+}
+
+# read data from zip file
+d_original<-read.csv(unz("repdata-Fdata-Factivity.zip", "activity.csv"))
+```
+
+2. Process/transform the data (if necessary) into a format suitable for analysis
+- make a copy of the original data, for further processing
+
+```r
+# make a copy of original data
+d<-d_original
+
+# format as date
+d$date<-as.Date(d$date)
+
+# make a data set where all steps are not null
+d_not_null<-d[!is.na(d$steps),]
+```
+
+## What is mean total number of steps taken per day?
+
+For this part of the assignment, missing values in the dataset are ignored.
+
+1. Calculate the total number of steps taken per day
+
+```r
+# total daily steps
+daily_steps<-aggregate(
+        x=d_not_null$steps
+        ,by=list(date=d_not_null$date)
+        ,FUN=sum
+)
+
+# rename
+names(daily_steps)[names(daily_steps)=="x"] <- "total_steps"
+```
+
+2. Make a histogram of the total number of steps taken each day
+
+```r
+ggplot(
+        data = daily_steps
+        ,aes(x=total_steps)
+)+ 
+        geom_histogram(
+                binwidth=2500
+                ,colour="black"
+                , fill="grey"
+        )+
+        xlab("Total daily steps")+
+        ylab("Number of days")+
+        theme(text = element_text(size=20))+
+        ggtitle(expression(atop("Total number of steps taken per day", atop(italic("missing values have been removed"), ""))))
+```
+
+![plot of chunk unnamed-chunk-5](figure/unnamed-chunk-5-1.png) 
+
+3. Calculate and report the mean and median of the total number of steps taken per day
+
+```r
+# calculate, convert scientific to decimal format
+daily_steps_mean<-format(round(mean(daily_steps$total_steps), 2),2)
+daily_steps_median<-format(round(median(daily_steps$total_steps), 2),2)
+```
+- The mean of the total number of steps taken per day is 10766.19.
+- The median of the total number of steps taken per day is 10765.
+
+## What is the average daily activity pattern?
+
+1. Make a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+
+```r
+# transform interval format into HH:MM
+d_not_null$interval_hhmm<-ifelse(
+        d_not_null$interval<10
+        ,paste("00:0",as.character(d_not_null$interval),":00",sep="")
+        ,ifelse(
+                d_not_null$interval<100
+                ,paste("00:",as.character(d_not_null$interval),":00",sep="")
+                ,ifelse(
+                        d_not_null$interval<1000
+                        ,paste(
+                                "0"
+                                ,substr(as.character(d_not_null$interval),1,1)
+                                ,":"
+                                ,substr(as.character(d_not_null$interval),2,3)
+                                ,":00"
+                                ,sep="")
+                        ,paste(
+                                substr(as.character(d_not_null$interval),1,2)
+                                ,":"
+                                ,substr(as.character(d_not_null$interval),3,4)
+                                ,":00"
+                                ,sep="")   
+                )
+        )
+)
+
+# time format
+d_not_null$interval_time<-strftime(as.POSIXlt(d_not_null$interval_hhmm,format="%H:%M"))
+
+# mean steps per interval
+interval_steps<-aggregate(
+        x=d_not_null$steps
+        ,by=list(interval=d_not_null$interval_hhmm)
+        ,FUN=mean
+)
+
+# rename
+names(interval_steps)[names(interval_steps)=="x"] <- "average_steps"
+
+# produce plot
+qplot(
+        interval
+        ,average_steps
+        ,data=interval_steps
+        ,geom=c("line","point")
+        ,group = 1
+        ,xlab="Interval"
+        ,ylab="Total steps"
+)+ 
+        scale_x_discrete(breaks=c("0:00:00","06:00:00","12:00:00","18:00:00"))+
+        theme(text = element_text(size=20))+
+        ggtitle(expression(atop("Number of steps taken per interval", atop(italic("averaged across all days, missing values have been removed"), ""))))
+```
+
+![plot of chunk unnamed-chunk-7](figure/unnamed-chunk-7-1.png) 
+
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```r
+# maximum value
+mx<-max(interval_steps$average_steps)
+
+# interval of maximum value
+mx_interval<-interval_steps[interval_steps$average_steps==mx,"interval"]
+
+# scientific to decimal formatting
+mx<-format(round(mx,2),2)
+```
+- The maximum average number of steps is 206.17.
+- It is contained in the 08:35:00 interval.
+
+
+## Imputing missing values
+
+- Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+1. Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+```r
+# missing values per variable
+NA_steps<-sum(is.na(d$steps))
+NA_date<-sum(is.na(d$date))
+NA_interval<-sum(is.na(d$interval))
+
+# sum of missing values
+Na_total<-NA_steps+NA_date+NA_interval
+```
+- the total number of missing values in the dataset is 2304.
+
+
+2. Fill in all of the missing values in the dataset by replacing them with the median for their 5-minute interval.
+
+```r
+# calculate interval medians
+interval_median_steps<-aggregate(
+        x=d_not_null$steps
+        ,by=list(interval=d_not_null$interval)
+        ,FUN=median
+)
+
+# join original data with medians
+original_d_with_medians<-merge(
+        x=d
+        ,y=interval_median_steps
+        ,by.x="interval"
+        ,by.y="interval"
+        ,all.x=TRUE
+)
+```
+
+3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```r
+# same structure, replaced values
+d_with_replaced_NAs<-data.frame(
+        interval=original_d_with_medians$interval
+        ,steps=ifelse(
+                is.na(original_d_with_medians$steps)
+                ,original_d_with_medians$x
+                ,original_d_with_medians$steps
+        )
+        ,date=original_d_with_medians$date
+)
+```
+
+4. Make a histogram of the total number of steps taken each day. 
+
+```r
+# compute daily steps
+daily_steps_with_replaced_NAs<-aggregate(
+        x=d_with_replaced_NAs$steps
+        ,by=list(date=d_with_replaced_NAs$date)
+        ,FUN=sum
+)
+
+# rename
+names(daily_steps_with_replaced_NAs)[names(daily_steps_with_replaced_NAs)=="x"] <- "total_steps_after_replacing_NAs"
+
+# plot the histogram
+ggplot(
+        data = daily_steps_with_replaced_NAs
+        ,aes(x=total_steps_after_replacing_NAs)
+)+ 
+        geom_histogram(
+                binwidth=2500
+                ,colour="black"
+                , fill="grey"
+        )+
+        xlab("Total daily steps")+
+        ylab("Number of days")+
+        theme(text = element_text(size=20))+
+        ggtitle(expression(atop("Total number of steps taken per day", atop(italic("missing values have been replaced with interval median"), ""))))
+```
+
+![plot of chunk unnamed-chunk-12](figure/unnamed-chunk-12-1.png) 
+
+- Calculate and report the mean and median total number of steps taken per day.
+- Do these values differ from the estimates from the first part of the assignment? 
+
+```r
+# measures for replaced missing values
+daily_steps_mean_with_replaced_NAs<-round(mean(daily_steps_with_replaced_NAs$total_steps),2)
+daily_steps_median_with_replaced_NAs<-median(daily_steps_with_replaced_NAs$total_steps)
+
+daily_steps_mean_with_replaced_NAs_to_print<-format(daily_steps_mean_with_replaced_NAs,2)
+
+# measures for omitted missing values
+daily_steps_mean<-round(mean(daily_steps$total_steps),2)
+daily_steps_median<-median(daily_steps$total_steps)
+
+# difference in measures
+means_diff<-format(round((daily_steps_mean_with_replaced_NAs-daily_steps_mean),2),2)
+medians_diff<-(daily_steps_median_with_replaced_NAs-daily_steps_median)
+```
+- When missing values are replaced with interval medians, the mean of the total number of steps taken per day is 9503.87, which differs by -1262.32 from the case when missing values are removed.
+- When missing values are replaced with interval medians, the median of the total number of steps taken per day is 10395, which differs by -370 from the case when missing values are removed.
+
+- What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+```r
+# data frame to examine the effect of replacing missing values
+daily_steps_with_and_without_replacing_NAs<-rbind(
+        data.frame(
+                total_steps=daily_steps$total_steps
+                ,NAs_replaced="no"
+        )        
+        ,data.frame(
+                total_steps=daily_steps_with_replaced_NAs$total_steps_after_replacing_NAs
+                ,NAs_replaced="yes"
+        )        
+)
+
+# comparative plot - 2 histograms
+ggplot(
+        data = daily_steps_with_and_without_replacing_NAs
+        ,aes(x=total_steps,fill=NAs_replaced)
+)+ 
+        geom_bar(
+                position="dodge"
+                ,binwidth=500
+        )+
+        xlab("Total daily steps")+
+        ylab("Number of days")+
+        theme(text = element_text(size=20))+
+        ggtitle(expression(atop("Total number of steps taken per day", atop(italic("with and without replacing missing values with medians"), ""))))
+```
+
+![plot of chunk unnamed-chunk-14](figure/unnamed-chunk-14-1.png) 
+
+- In terms of central measures, the mean and median daily steps have decreased after missing values had been replaced.
+- In terms of distribution shape, the above comparative histograms demonstrate how imputing missing data on the estimates of the total daily number of steps has almost no effect, except for a very specific region.
+- That specific region of difference needs further examination
+
+
+```r
+# original data for days with missing values only
+d_null<-d[is.na(d$steps),]
+
+# number of days with missing values
+dates_with_NA<-aggregate(
+        x=d_null$steps
+        ,by=list(date=d_null$date)
+        ,FUN=length
+) # --> each interval misses exactly 288 values of steps
+
+# rename
+names(dates_with_NA)[names(dates_with_NA)=="x"] <- "number_of_missing_values"
+
+# make sure the date is printed correctly
+xt<-xtable(data.frame(
+             date=as.character(dates_with_NA$date)
+             ,number_of_missing_values=dates_with_NA$number_of_missing_values
+        )
+)
+print(xt, type="html")
+```
+
+<!-- html table generated in R 3.1.1 by xtable 1.7-4 package -->
+<!-- Thu Apr 16 14:48:42 2015 -->
+<table border=1>
+<tr> <th>  </th> <th> date </th> <th> number_of_missing_values </th>  </tr>
+  <tr> <td align="right"> 1 </td> <td> 2012-10-01 </td> <td align="right"> 288 </td> </tr>
+  <tr> <td align="right"> 2 </td> <td> 2012-10-08 </td> <td align="right"> 288 </td> </tr>
+  <tr> <td align="right"> 3 </td> <td> 2012-11-01 </td> <td align="right"> 288 </td> </tr>
+  <tr> <td align="right"> 4 </td> <td> 2012-11-04 </td> <td align="right"> 288 </td> </tr>
+  <tr> <td align="right"> 5 </td> <td> 2012-11-09 </td> <td align="right"> 288 </td> </tr>
+  <tr> <td align="right"> 6 </td> <td> 2012-11-10 </td> <td align="right"> 288 </td> </tr>
+  <tr> <td align="right"> 7 </td> <td> 2012-11-14 </td> <td align="right"> 288 </td> </tr>
+  <tr> <td align="right"> 8 </td> <td> 2012-11-30 </td> <td align="right"> 288 </td> </tr>
+   </table>
+- It seems that only 8 days are the source of difference, each with exactly 288 missing values for interval steps.
+- Here is a code for closer look on these 8 days.
+
+
+```r
+# daily steps in dates where missing values were replaced
+total_daily_steps_where_replaced<-aggregate(
+        x=d_with_replaced_NAs[d_with_replaced_NAs$date %in% dates_with_NA$date,"steps"]
+        ,by=list(d_with_replaced_NAs[d_with_replaced_NAs$date %in% dates_with_NA$date,"date"])
+        ,FUN=sum
+)
+
+# rename variables
+names(total_daily_steps_where_replaced)[names(total_daily_steps_where_replaced)=="Group.1"] <- "date"
+names(total_daily_steps_where_replaced)[names(total_daily_steps_where_replaced)=="x"] <- "total_steps_after_replacing_NAs"
+
+total_daily_steps_where_replaced$date<-as.Date(total_daily_steps_where_replaced$date, format="%Y-%m-%d")
+
+# calculate region of difference
+N_steps_in_replaced_days<-unique(total_daily_steps_where_replaced$total_steps_after_replacing_NAs)
+
+# xt2<-xtable(total_daily_steps_where_replaced)
+# make sure the date is printed correctly
+xt2<-xtable(data.frame(
+             date=as.character(total_daily_steps_where_replaced$date)
+             ,total_steps_after_replacing_NAs=total_daily_steps_where_replaced$total_steps_after_replacing_NAs
+        )
+)
+print(xt2, type="html")
+```
+
+<!-- html table generated in R 3.1.1 by xtable 1.7-4 package -->
+<!-- Thu Apr 16 14:48:42 2015 -->
+<table border=1>
+<tr> <th>  </th> <th> date </th> <th> total_steps_after_replacing_NAs </th>  </tr>
+  <tr> <td align="right"> 1 </td> <td> 2012-10-01 </td> <td align="right"> 1141 </td> </tr>
+  <tr> <td align="right"> 2 </td> <td> 2012-10-08 </td> <td align="right"> 1141 </td> </tr>
+  <tr> <td align="right"> 3 </td> <td> 2012-11-01 </td> <td align="right"> 1141 </td> </tr>
+  <tr> <td align="right"> 4 </td> <td> 2012-11-04 </td> <td align="right"> 1141 </td> </tr>
+  <tr> <td align="right"> 5 </td> <td> 2012-11-09 </td> <td align="right"> 1141 </td> </tr>
+  <tr> <td align="right"> 6 </td> <td> 2012-11-10 </td> <td align="right"> 1141 </td> </tr>
+  <tr> <td align="right"> 7 </td> <td> 2012-11-14 </td> <td align="right"> 1141 </td> </tr>
+  <tr> <td align="right"> 8 </td> <td> 2012-11-30 </td> <td align="right"> 1141 </td> </tr>
+   </table>
+- Further examination revealed that exactly 1141 daily steps were calculated for each of these days.
+- This is the only column in the comparative histogram that changed when missing values were imputed with interval medians.
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+- Note: For this part the dataset used in the one with the filled-in missing values.
+
+1. Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+
+
+```r
+# save original locale, to reset later
+original_locale<-Sys.getlocale("LC_TIME")
+
+# set locale to English
+Sys.setlocale("LC_TIME", "English")
+```
+
+```
+## [1] "English_United States.1252"
+```
+
+```r
+# create factor variable
+d_with_replaced_NAs$weekpart<-ifelse(
+        weekdays(d_with_replaced_NAs$date) %in% c("Saturday","Sunday")    
+        ,"weekend"
+        ,"weekday"
+)
+```
+
+2. Make a panel plot containing a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
+
+```r
+# Calculate the average number of steps taken per interval
+interval_weekpart_steps<-aggregate(
+        x=d_with_replaced_NAs$steps
+        ,by=list(interval=d_with_replaced_NAs$interval, weekpart=d_with_replaced_NAs$weekpart)
+        ,FUN=mean
+)
+
+# rename variable
+names(interval_weekpart_steps)[names(interval_weekpart_steps)=="x"] <- "average_steps"
+
+# produce plot
+qplot(
+        interval
+        ,average_steps
+        ,data=interval_weekpart_steps
+        ,geom=c("line","point")
+        ,group = 1
+        ,xlab="Interval"
+        ,ylab="Number of steps"
+        ,facets = weekpart~.
+)+ 
+        theme(text = element_text(size=20))+
+        ggtitle(expression(atop("Number of steps taken per interval", atop(italic("avg. across all days, missing values replaced with medians"), ""))))
+```
+
+![plot of chunk unnamed-chunk-16](figure/unnamed-chunk-16-1.png) 
+
+```r
+# reset locale to original
+Sys.setlocale("LC_TIME", original_locale)
+```
+
+```
+## [1] "English_United States.1252"
+```
